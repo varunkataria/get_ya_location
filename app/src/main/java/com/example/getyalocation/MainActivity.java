@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.IntentSender;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.net.Uri;
@@ -70,6 +71,8 @@ public class MainActivity extends AppCompatActivity {
     private LocationCallback mLocationCallback;
     private Location mCurrentLocation;
 
+    private Boolean cancelled;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -92,6 +95,7 @@ public class MainActivity extends AppCompatActivity {
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         mSettingsClient = LocationServices.getSettingsClient(this);
 
+        getLocationRequest();
 
         createLocationCallback();
         createLocationRequest();
@@ -161,59 +165,72 @@ public class MainActivity extends AppCompatActivity {
     private void checkLocationEnabled() {
         System.out.println("Checking if location is enabled!" +
                 "");
-        mSettingsClient.checkLocationSettings(mLocationSettingsRequest)
-                .addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
-                    @Override
-                    public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
-                        System.out.println("Success");
-                        Log.i(TAG, "All location settings are satisfied.");
+            mSettingsClient.checkLocationSettings(mLocationSettingsRequest)
+                    .addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
+                        @Override
+                        public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
+                            System.out.println("Success");
+                            Log.i(TAG, "All location settings are satisfied.");
 
-                        //noinspection MissingPermission
-                        if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                            // TODO: Consider calling
-                            //    ActivityCompat#requestPermissions
-                            // here to request the missing permissions, and then overriding
-                            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                            //                                          int[] grantResults)
-                            // to handle the case where the user grants the permission. See the documentation
-                            // for ActivityCompat#requestPermissions for more details.
-                            return;
+                            //noinspection MissingPermission
+                            if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                                // TODO: Consider calling
+                                //    ActivityCompat#requestPermissions
+                                // here to request the missing permissions, and then overriding
+                                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                //                                          int[] grantResults)
+                                // to handle the case where the user grants the permission. See the documentation
+                                // for ActivityCompat#requestPermissions for more details.
+                                return;
+                            }
+                            mFusedLocationClient.requestLocationUpdates(mLocationRequest,
+                                    mLocationCallback, Looper.myLooper());
                         }
-                        mFusedLocationClient.requestLocationUpdates(mLocationRequest,
-                                mLocationCallback, Looper.myLooper());
-                    }
-                })
-                .addOnFailureListener(this, new OnFailureListener() {
-                    @Override
-                    public void onFailure(@NonNull Exception e) {
-                        System.out.println("Failure");
-                        int statusCode = ((ApiException) e).getStatusCode();
-                        System.out.println(e.getMessage());
-                        Log.i(TAG, e.getMessage());
-                        switch (statusCode) {
-                            case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
-                                System.out.println("Failure 1");
-                                Log.i(TAG, "Location settings are not satisfied. Attempting to upgrade " +
-                                        "location settings ");
-                                try {
-                                    // Show the dialog by calling startResolutionForResult(), and check the
-                                    // result in onActivityResult().
-                                    ResolvableApiException rae = (ResolvableApiException) e;
-                                    rae.startResolutionForResult(MainActivity.this, REQUEST_CHECK_SETTINGS);
-                                } catch (IntentSender.SendIntentException sie) {
-                                    Log.i(TAG, "PendingIntent unable to execute request.");
+                    })
+                    .addOnFailureListener(this, new OnFailureListener() {
+                        @Override
+                        public void onFailure(@NonNull Exception e) {
+                            saveLocationRequest();
+                            System.out.println("Failure");
+                            int statusCode = ((ApiException) e).getStatusCode();
+                            System.out.println(e.getMessage());
+                            Log.i(TAG, e.getMessage());
+                            if (!cancelled) {
+                                switch (statusCode) {
+                                    case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
+                                        System.out.println("Failure 1");
+                                        Log.i(TAG, "Location settings are not satisfied. Attempting to upgrade " +
+                                                "location settings ");
+                                        try {
+                                            // Show the dialog by calling startResolutionForResult(), and check the
+                                            // result in onActivityResult().
+                                            ResolvableApiException rae = (ResolvableApiException) e;
+                                            rae.startResolutionForResult(MainActivity.this, REQUEST_CHECK_SETTINGS);
+                                        } catch (IntentSender.SendIntentException sie) {
+                                            Log.i(TAG, "PendingIntent unable to execute request.");
+                                        }
+                                    case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
+                                        System.out.println("Failure 2");
+                                        String errorMessage = "Location settings are inadequate, and cannot be " +
+                                                "fixed here. Fix in Settings.";
+                                        Log.e(TAG, errorMessage);
+                                        break;
                                 }
-                            case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
-                                System.out.println("Failure 2");
-                                String errorMessage = "Location settings are inadequate, and cannot be " +
-                                        "fixed here. Fix in Settings.";
-                                Log.e(TAG, errorMessage);
-
-                                break;
+                            } else {
+                                Handler handler = new Handler();
+                                handler.postDelayed(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            mFusedLocationClient.requestLocationUpdates(mLocationRequest,
+                                                    mLocationCallback, Looper.myLooper());
+                                        } catch (SecurityException e) {}
+                                        updateLocationUI();
+                                    }
+                                }, 5000);
+                            }
                         }
-
-                    }
-                });
+                    });
 
     }
 
@@ -222,28 +239,30 @@ public class MainActivity extends AppCompatActivity {
         switch (requestCode) {
             // Check for the integer request code originally supplied to startResolutionForResult().
             case REQUEST_CHECK_SETTINGS:
-                switch (resultCode) {
-                    case Activity.RESULT_OK:
-                        Log.i(TAG, "User agreed to make required location settings changes.");
-                        // Nothing to do. startLocationupdates() gets called in onResume again.
-                        checkLocationEnabled();
-                        break;
-                    case Activity.RESULT_CANCELED:
-                        Log.i(TAG, "User chose not to make required location settings changes.");
-                        //noinspection MissingPermission
-                        Handler handler = new Handler();
-                        handler.postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                try {
-                                    mFusedLocationClient.requestLocationUpdates(mLocationRequest,
-                                            mLocationCallback, Looper.myLooper());
-                                } catch (SecurityException e) {}
-                                updateLocationUI();
-                            }
-                        }, 5000);
-                }
-                break;
+                System.out.println("WE HERE");
+                getLocationRequest();
+                    switch (resultCode) {
+                        case Activity.RESULT_OK:
+                            Log.i(TAG, "User agreed to make required location settings changes.");
+                            // Nothing to do. startLocationupdates() gets called in onResume again.
+                            checkLocationEnabled();
+                            break;
+                        case Activity.RESULT_CANCELED:
+                            Log.i(TAG, "User chose not to make required location settings changes.");
+                            //noinspection MissingPermission
+                            Handler handler = new Handler();
+                            handler.postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    try {
+                                        mFusedLocationClient.requestLocationUpdates(mLocationRequest,
+                                                mLocationCallback, Looper.myLooper());
+                                    } catch (SecurityException e) {}
+                                    updateLocationUI();
+                                }
+                            }, 5000);
+                    }
+                    break;
         }
     }
 
@@ -305,7 +324,8 @@ public class MainActivity extends AppCompatActivity {
                                     requestPermissions();
                                 }
                             });
-                }                // Permission denied.
+                }
+                // Permission denied.
                 // Notify the user via a SnackBar that they have rejected a core permission for the
                 // app, which makes the Activity useless. In a real app, core permissions would
                 // typically be best requested during a welcome-screen flow.
@@ -343,6 +363,19 @@ public class MainActivity extends AppCompatActivity {
             mLastUpdateTimeTextView.setText(String.format(Locale.ENGLISH, "%s: %s",
                     mLastUpdateTimeLabel, mLastUpdateTime));
         }
+    }
+
+    private void saveLocationRequest() {
+        SharedPreferences sharedPreferences = getSharedPreferences("sp", Activity.MODE_PRIVATE);
+        SharedPreferences.Editor mEdit1 = sharedPreferences.edit();
+        mEdit1.putBoolean("cancelled", true);
+        mEdit1.commit();
+    }
+
+    private void getLocationRequest() {
+        SharedPreferences sharedPreferences = getSharedPreferences("sp", Activity.MODE_PRIVATE);
+        cancelled = sharedPreferences.getBoolean("cancelled", false);
+
     }
 
 }
