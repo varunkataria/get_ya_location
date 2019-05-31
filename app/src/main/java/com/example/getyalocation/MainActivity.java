@@ -36,9 +36,20 @@ import com.google.android.gms.location.SettingsClient;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.Locale;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -57,12 +68,15 @@ public class MainActivity extends AppCompatActivity {
     private TextView mLastUpdateTimeTextView;
     private TextView mLatitudeTextView;
     private TextView mLongitudeTextView;
+    private TextView formattedAddress;
+
 
     // Labels.
     private String mLatitudeLabel;
     private String mLongitudeLabel;
     private String mLastUpdateTimeLabel;
-
+    private String mAddressLabel;
+    private String mFormattedAddress;
 
     private SettingsClient mSettingsClient;
     private LocationRequest mLocationRequest;
@@ -86,10 +100,12 @@ public class MainActivity extends AppCompatActivity {
         mLatitudeLabel = getResources().getString(R.string.latitude_label);
         mLongitudeLabel = getResources().getString(R.string.longitude_label);
         mLastUpdateTimeLabel = getResources().getString(R.string.last_update_time_label);
+        mAddressLabel = getResources().getString(R.string.address_label);
 
         mLatitudeTextView = (TextView) findViewById(R.id.latitude_text);
         mLongitudeTextView = (TextView) findViewById(R.id.longitude_text);
         mLastUpdateTimeTextView = (TextView) findViewById(R.id.last_update_time_text);
+        formattedAddress =  (TextView) findViewById(R.id.address);
 
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
@@ -362,6 +378,9 @@ public class MainActivity extends AppCompatActivity {
                     mCurrentLocation.getLongitude()));
             mLastUpdateTimeTextView.setText(String.format(Locale.ENGLISH, "%s: %s",
                     mLastUpdateTimeLabel, mLastUpdateTime));
+            loadAddress(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+            formattedAddress.setText(String.format(Locale.ENGLISH, "%s: %s", mAddressLabel, mFormattedAddress));
+
         }
     }
 
@@ -376,6 +395,42 @@ public class MainActivity extends AppCompatActivity {
         SharedPreferences sharedPreferences = getSharedPreferences("sp", Activity.MODE_PRIVATE);
         cancelled = sharedPreferences.getBoolean("cancelled", false);
 
+    }
+
+    private void loadAddress(double latitude, double longitude) {
+        OkHttpClient client = Client.getInstance();
+        String url = "https://maps.googleapis.com/maps/api/geocode/json?latlng=" + latitude + "," + longitude + "&key=AIzaSyBn0W0sMCzRHJ1bvwNCqqmR3_exOJ5mxIA";
+        Request request = new Request.Builder()
+                .url(url)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    final String myResponse = response.body().string();
+
+                    MainActivity.this.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                JSONObject jsonObject = new JSONObject(myResponse);
+                                mFormattedAddress = ((JSONArray)jsonObject.get("results")).getJSONObject(0).getString("formatted_address");
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+
+                        }
+                    });
+
+                }
+            }
+        });
     }
 
 }

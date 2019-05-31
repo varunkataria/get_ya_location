@@ -54,6 +54,14 @@
         android:layout_marginStart="16dp"
         android:textSize="16sp" />
 
+        <TextView
+            android:id="@+id/address"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="16dp"
+            android:layout_marginStart="16dp"
+            android:textSize="16sp" />
+
     <TextView
         android:id="@+id/location_inadequate_warning"
         android:layout_width="match_parent"
